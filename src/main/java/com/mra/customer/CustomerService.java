@@ -1,6 +1,7 @@
 package com.mra.customer;
 
-import com.mra.exception.ResourceNotFound;
+import com.mra.exception.DuplicateResourceException;
+import com.mra.exception.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -21,9 +22,22 @@ public class CustomerService {
 
     public Customer getCustomerById(Integer id) {
         return customerDao.selectCustomerById(id)
-                .orElseThrow(() -> new ResourceNotFound(
+                .orElseThrow(() -> new ResourceNotFoundException(
                         "Customer with id [%s] not found".formatted(id)
                 ));
+    }
+
+    public void addCustomer(CustomerRegistrationRequest customerRegistrationRequest) {
+        if (customerDao.existsCustomerByEmail(customerRegistrationRequest.email())) {
+            throw new DuplicateResourceException("Email already taken");
+        }
+
+        Customer customer = new Customer(
+                customerRegistrationRequest.name(),
+                customerRegistrationRequest.email(),
+                customerRegistrationRequest.age()
+        );
+        customerDao.insertCustomer(customer);
     }
 
 }
