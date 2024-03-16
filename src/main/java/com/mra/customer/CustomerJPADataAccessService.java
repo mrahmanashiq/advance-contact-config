@@ -34,4 +34,14 @@ public class CustomerJPADataAccessService implements CustomerDao {
         return customerRepository.existsCustomerByEmail(email);
     }
 
+    @Override
+    public boolean existsCustomerById(Integer id) {
+        return customerRepository.existsCustomerById(id);
+    }
+
+    @Override
+    public void deleteCustomerById(Integer id) {
+        customerRepository.deleteById(id);
+    }
+
 }
