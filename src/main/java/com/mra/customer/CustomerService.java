@@ -3,55 +3,76 @@ package com.mra.customer;
 import com.mra.exception.DuplicateResourceException;
 import com.mra.exception.RequestValidationException;
 import com.mra.exception.ResourceNotFoundException;
+import com.mra.service.InternationalizationService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
+@Transactional
 public class CustomerService {
 
-    public final CustomerDao customerDao;
+    @Qualifier("jpa")
+    private final CustomerDao customerDao;
+    private final InternationalizationService i18nService;
 
-    public CustomerService(@Qualifier("jpa") CustomerDao customerDao) {
-        this.customerDao = customerDao;
+    @Cacheable(value = "customers", key = "#pageable.pageNumber + '-' + #pageable.pageSize")
+    public Page<Customer> getAllCustomers(Pageable pageable) {
+        return customerDao.selectAllCustomers(pageable);
     }
+
+
 
     public List<Customer> getAllCustomers() {
         return customerDao.selectAllCustomers();
     }
 
-    public Customer getCustomerById(Integer id) {
+    @Cacheable(value = "customer", key = "#id")
+    public Customer getCustomerById(Long id) {
         return customerDao.selectCustomerById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Customer with id [%s] not found".formatted(id)
+                        i18nService.getMessage("customer.not.found", id)
                 ));
     }
 
-    public void addCustomer(CustomerRegistrationRequest customerRegistrationRequest) {
+    @CacheEvict(value = {"customers", "customer"}, allEntries = true)
+    public Customer addCustomer(CustomerRegistrationRequest customerRegistrationRequest) {
         if (customerDao.existsCustomerByEmail(customerRegistrationRequest.email())) {
-            throw new DuplicateResourceException("Email already taken");
+            throw new DuplicateResourceException(
+                    i18nService.getMessage("customer.email.exists")
+            );
         }
 
         Customer customer = new Customer(
                 customerRegistrationRequest.name(),
                 customerRegistrationRequest.email(),
-                customerRegistrationRequest.age()
+                customerRegistrationRequest.age(),
+                customerRegistrationRequest.phone(),
+                customerRegistrationRequest.address()
         );
-        customerDao.insertCustomer(customer);
+        return customerDao.insertCustomer(customer);
     }
 
-    public void deleteCustomerById(Integer customerId) {
+    @CacheEvict(value = {"customers", "customer"}, allEntries = true)
+    public void deleteCustomerById(Long customerId) {
         if (!customerDao.existsCustomerById(customerId)) {
             throw new ResourceNotFoundException(
-                    "Customer with id [%s] not found".formatted(customerId)
+                    i18nService.getMessage("customer.not.found", customerId)
             );
         }
         customerDao.deleteCustomerById(customerId);
     }
 
-    public void updateCustomer(Integer customerId, CustomerUpdateRequest updateRequest) {
-        // TODO: for JPA use .getReferenceById(customerId) as it does doe
+    @CacheEvict(value = {"customers", "customer"}, allEntries = true)
+    public Customer updateCustomer(Long customerId, CustomerUpdateRequest updateRequest) {
         Customer customer = getCustomerById(customerId);
 
         boolean changes = false;
@@ -62,7 +83,9 @@ public class CustomerService {
         }
         if (updateRequest.email() != null && !updateRequest.email().equals(customer.getEmail())) {
             if (customerDao.existsCustomerByEmail(updateRequest.email())) {
-                throw new DuplicateResourceException("Email already taken");
+                throw new DuplicateResourceException(
+                        i18nService.getMessage("customer.email.exists")
+                );
             }
             customer.setEmail(updateRequest.email());
             changes = true;
@@ -71,12 +94,27 @@ public class CustomerService {
             customer.setAge(updateRequest.age());
             changes = true;
         }
-
-        if (!changes) {
-            throw new RequestValidationException("No changes detected");
+        if (updateRequest.phone() != null && !updateRequest.phone().equals(customer.getPhone())) {
+            customer.setPhone(updateRequest.phone());
+            changes = true;
+        }
+        if (updateRequest.address() != null && !updateRequest.address().equals(customer.getAddress())) {
+            customer.setAddress(updateRequest.address());
+            changes = true;
         }
 
-        customerDao.updateCustomer(customer);
+        if (!changes) {
+            throw new RequestValidationException(
+                    i18nService.getMessage("customer.no.changes")
+            );
+        }
+
+        return customerDao.updateCustomer(customer);
+    }
+
+    @Cacheable(value = "customerSearch", key = "#query + '-' + #pageable.pageNumber")
+    public Page<Customer> searchCustomers(String query, Pageable pageable) {
+        return customerDao.searchCustomersPaged(query, pageable);
     }
 
 }
